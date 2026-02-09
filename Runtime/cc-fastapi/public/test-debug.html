@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude API 调试工具</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            background: #0d1117;
+            color: #c9d1d9;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #58a6ff;
+        }
+        .panel {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .panel-title {
+            color: #58a6ff;
+            font-size: 14px;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #30363d;
+        }
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        input[type="text"], textarea {
+            flex: 1;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 10px;
+            color: #c9d1d9;
+            font-family: inherit;
+            font-size: 13px;
+            resize: vertical;
+        }
+        input[type="text"]:focus, textarea:focus {
+            outline: none;
+            border-color: #58a6ff;
+        }
+        textarea {
+            min-height: 80px;
+        }
+        button {
+            background: #238636;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-family: inherit;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #2ea043;
+        }
+        button:disabled {
+            background: #30363d;
+            cursor: not-allowed;
+        }
+        button.secondary {
+            background: #30363d;
+        }
+        button.secondary:hover {
+            background: #3c444d;
+        }
+        button.danger {
+            background: #da3633;
+        }
+        button.danger:hover {
+            background: #f85149;
+        }
+        .quick-tests {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            background: #0d1117;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #30363d;
+        }
+        .status-dot.idle {
+            background: #7d8590;
+        }
+        .status-dot.streaming {
+            background: #238636;
+            animation: pulse 1s infinite;
+        }
+        .status-dot.error {
+            background: #da3633;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .output-container {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 15px;
+            min-height: 300px;
+            max-height: 500px;
+            overflow-y: auto;
+            font-size: 12px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .output-line {
+            padding: 2px 0;
+        }
+        .output-line.system {
+            color: #7d8590;
+        }
+        .output-line.text {
+            color: #c9d1d9;
+        }
+        .output-line.error {
+            color: #da3633;
+        }
+        .output-line.event {
+            color: #58a6ff;
+        }
+        .raw-output {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 15px;
+            min-height: 150px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-size: 11px;
+            line-height: 1.4;
+            white-space: pre-wrap;
+            word-break: break-all;
+            color: #7d8590;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .stat-item {
+            background: #0d1117;
+            padding: 10px;
+            border-radius: 6px;
+        }
+        .stat-label {
+            color: #7d8590;
+            font-size: 11px;
+            margin-bottom: 5px;
+        }
+        .stat-value {
+            color: #58a6ff;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        .toggle-group {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        .toggle-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .toggle-item input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Claude API 调试工具</h1>
+
+        <!-- 请求面板 -->
+        <div class="panel">
+            <div class="panel-title">请求配置</div>
+
+            <div class="toggle-group">
+                <label class="toggle-item">
+                    <input type="checkbox" id="showRawEvents">
+                    显示原始事件
+                </label>
+                <label class="toggle-item">
+                    <input type="checkbox" id="autoScroll" checked>
+                    自动滚动
+                </label>
+            </div>
+
+            <div class="quick-tests">
+                <button onclick="test('count from 1 to 10')">从1数到10</button>
+                <button onclick="test('say hello in Chinese')">用中文打招呼</button>
+                <button onclick="test('write a function to calculate fibonacci')">斐波那契函数</button>
+                <button onclick="test('what is the capital of France?')">法国首都</button>
+            </div>
+
+            <div class="input-group" style="margin-top: 15px;">
+                <textarea id="prompt" placeholder="输入自定义提示词..."></textarea>
+            </div>
+
+            <div class="input-group">
+                <button onclick="sendPrompt()" id="sendBtn">发送请求</button>
+                <button class="secondary" onclick="clearOutput()">清空输出</button>
+            </div>
+        </div>
+
+        <!-- 权限测试面板 -->
+        <div class="panel">
+            <div class="panel-title">权限测试</div>
+
+            <div class="input-group">
+                <input type="text" id="workspaceInput" placeholder="工作目录 (可选)">
+            </div>
+
+            <div class="input-group">
+                <input type="text" id="externaldirsInput" placeholder="外部目录，逗号分隔 (可选)">
+            </div>
+
+            <div class="input-group">
+                <select id="allowedmodeSelect" style="flex: 1; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 10px; color: #c9d1d9;">
+                    <option value="">无限制</option>
+                    <option value="pure">纯粹模式 (pure)</option>
+                    <option value="simple">允许联网 (simple)</option>
+                    <option value="readonly">只读模式 (readonly)</option>
+                    <option value="projectwrite">工程可写 (projectwrite)</option>
+                </select>
+            </div>
+
+            <div class="input-group">
+                <label class="toggle-item">
+                    <input type="checkbox" id="visionCheck">
+                    启用禁止幻觉
+                </label>
+            </div>
+
+            <div class="quick-tests">
+                <button onclick="testPermission('D盘有哪些文件?', 'pure')">测试纯粹模式</button>
+                <button onclick="testPermission('搜索最新AI新闻', 'simple')">测试联网模式</button>
+                <button onclick="testPermission('读取当前目录文件', 'readonly')">测试只读模式</button>
+                <button onclick="testWithVision('当前目录有哪些txt文件?')">测试禁止幻觉</button>
+            </div>
+        </div>
+
+        <!-- Session 管理面板 -->
+        <div class="panel">
+            <div class="panel-title">Session 管理</div>
+
+            <div class="input-group">
+                <button onclick="listSessions()">列出所有 Session</button>
+                <button class="secondary" onclick="clearSessions()">清空 Session 列表</button>
+            </div>
+
+            <div class="input-group" style="margin-top: 10px;">
+                <input type="text" id="sessionIdInput" placeholder="输入 Session ID...">
+                <button onclick="checkSession()">检查 Session</button>
+                <button class="danger" onclick="deleteSession()">删除 Session</button>
+            </div>
+
+            <div class="stats" style="margin-top: 15px;">
+                <div class="stat-item">
+                    <div class="stat-label">Session 总数</div>
+                    <div class="stat-value" id="sessionCount">-</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Session 列表面板 -->
+        <div class="panel">
+            <div class="panel-title">Session 列表</div>
+            <div class="output-container" id="sessionList" style="min-height: 150px; max-height: 300px;">
+                <div class="output-line system">点击"列出所有 Session"查看</div>
+            </div>
+        </div>
+
+        <!-- 状态面板 -->
+        <div class="panel">
+            <div class="panel-title">连接状态</div>
+            <div class="status-bar">
+                <div class="status-indicator">
+                    <div class="status-dot idle" id="statusDot"></div>
+                    <span id="statusText">空闲</span>
+                </div>
+                <div id="connectionInfo" style="color: #7d8590;"></div>
+            </div>
+
+            <div class="stats">
+                <div class="stat-item">
+                    <div class="stat-label">事件数量</div>
+                    <div class="stat-value" id="eventCount">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">字符数量</div>
+                    <div class="stat-value" id="charCount">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">耗时</div>
+                    <div class="stat-value" id="duration">0ms</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 并发状态面板 -->
+        <div class="panel">
+            <div class="panel-title">并发状态</div>
+            <div class="input-group">
+                <button onclick="refreshConcurrencyStatus()">刷新状态</button>
+            </div>
+            <div class="stats">
+                <div class="stat-item">
+                    <div class="stat-label">活跃请求</div>
+                    <div class="stat-value" id="activeCount">-</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">等待队列</div>
+                    <div class="stat-value" id="queuedCount">-</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">可用槽位</div>
+                    <div class="stat-value" id="availableCount">-</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">最大并发</div>
+                    <div class="stat-value" id="maxCount">-</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 输出面板 -->
+        <div class="panel">
+            <div class="panel-title">输出内容</div>
+            <div class="output-container" id="output"></div>
+        </div>
+
+        <!-- 原始事件面板 -->
+        <div class="panel">
+            <div class="panel-title">原始事件 (JSON)</div>
+            <div class="raw-output" id="rawOutput"></div>
+        </div>
+    </div>
+
+    <script>
+        const output = document.getElementById('output');
+        const rawOutput = document.getElementById('rawOutput');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const connectionInfo = document.getElementById('connectionInfo');
+        const eventCountEl = document.getElementById('eventCount');
+        const charCountEl = document.getElementById('charCount');
+        const durationEl = document.getElementById('duration');
+        const sendBtn = document.getElementById('sendBtn');
+        const promptInput = document.getElementById('prompt');
+        const showRawEvents = document.getElementById('showRawEvents');
+        const autoScroll = document.getElementById('autoScroll');
+
+        let eventCount = 0;
+        let charCount = 0;
+        let startTime = 0;
+
+        function setStatus(type, message) {
+            statusDot.className = 'status-dot ' + type;
+            statusText.textContent = message;
+        }
+
+        function appendToOutput(type, content, className = '') {
+            const line = document.createElement('div');
+            line.className = 'output-line ' + (className || type);
+
+            const timestamp = new Date().toLocaleTimeString();
+            line.textContent = `[${timestamp}] [${type}] ${content}`;
+
+            output.appendChild(line);
+
+            if (autoScroll.checked) {
+                output.scrollTop = output.scrollHeight;
+            }
+        }
+
+        function appendRawOutput(data) {
+            if (!showRawEvents.checked) return;
+            rawOutput.textContent += JSON.stringify(data) + '\n';
+            if (autoScroll.checked) {
+                rawOutput.scrollTop = rawOutput.scrollHeight;
+            }
+        }
+
+        function updateStats() {
+            eventCountEl.textContent = eventCount;
+            charCountEl.textContent = charCount;
+            if (startTime > 0) {
+                const elapsed = Date.now() - startTime;
+                durationEl.textContent = elapsed + 'ms';
+            }
+        }
+
+        function clearOutput() {
+            output.innerHTML = '';
+            rawOutput.textContent = '';
+            eventCount = 0;
+            charCount = 0;
+            startTime = 0;
+            updateStats();
+        }
+
+        async function sendRequest(prompt) {
+            if (!prompt.trim()) return;
+
+            clearOutput();
+            setStatus('streaming', '连接中...');
+            sendBtn.disabled = true;
+            startTime = Date.now();
+
+            appendToOutput('system', `发送请求: ${prompt}`);
+            appendRawOutput({ type: 'request', prompt });
+
+            try {
+                const response = await fetch('http://localhost:3000/chat/stream', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ prompt }),
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                setStatus('streaming', '接收数据...');
+                connectionInfo.textContent = `已连接: ${new Date().toLocaleTimeString()}`;
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.slice(6));
+                                appendRawOutput(data);
+
+                                switch (data.type) {
+                                    case 'start':
+                                        appendToOutput('system', `会话开始: ${data.sessionId}`, 'system');
+                                        break;
+                                    case 'data':
+                                        eventCount++;
+                                        if (data.content) {
+                                            if (typeof data.content === 'string') {
+                                                charCount += data.content.length;
+                                                appendToOutput('text', data.content, 'text');
+                                            } else if (data.content.text) {
+                                                charCount += data.content.text.length;
+                                                appendToOutput('text', data.content.text, 'text');
+                                            }
+                                        }
+                                        updateStats();
+                                        break;
+                                    case 'end':
+                                        appendToOutput('system', `会话结束: ${data.sessionId}`, 'system');
+                                        break;
+                                    case 'error':
+                                        appendToOutput('error', data.error || '未知错误', 'error');
+                                        break;
+                                }
+                            } catch (e) {
+                                appendToOutput('error', `解析失败: ${line}`, 'error');
+                            }
+                        }
+                    }
+                }
+
+                setStatus('idle', '完成');
+                connectionInfo.textContent = `完成于: ${new Date().toLocaleTimeString()}`;
+                updateStats();
+
+            } catch (error) {
+                appendToOutput('error', `请求失败: ${error.message}`, 'error');
+                setStatus('error', '错误');
+            } finally {
+                sendBtn.disabled = false;
+            }
+        }
+
+        function test(text) {
+            promptInput.value = text;
+            sendRequest(text);
+        }
+
+        function sendPrompt() {
+            sendRequest(promptInput.value);
+        }
+
+        // 回车发送
+        promptInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendPrompt();
+            }
+        });
+
+        // ==================== Session 管理功能 ====================
+
+        const sessionListEl = document.getElementById('sessionList');
+        const sessionCountEl = document.getElementById('sessionCount');
+        const sessionIdInput = document.getElementById('sessionIdInput');
+
+        // 列出所有 Session
+        async function listSessions() {
+            try {
+                sessionListEl.innerHTML = '<div class="output-line system">正在加载...</div>';
+                const response = await fetch('http://localhost:3000/session/list');
+                const data = await response.json();
+
+                sessionCountEl.textContent = data.totalSessions;
+
+                if (data.sessions.length === 0) {
+                    sessionListEl.innerHTML = '<div class="output-line system">暂无 Session</div>';
+                    return;
+                }
+
+                sessionListEl.innerHTML = '';
+                data.sessions.forEach((session, index) => {
+                    const line = document.createElement('div');
+                    line.className = 'output-line text';
+                    line.style.marginBottom = '15px';
+                    line.style.padding = '10px';
+                    line.style.background = '#0d1117';
+                    line.style.border = '1px solid #30363d';
+                    line.style.borderRadius = '6px';
+
+                    line.innerHTML = `
+                        <div style="color: #58a6ff; font-weight: bold; margin-bottom: 5px;">
+                            ${index + 1}. ${session.sessionId.substring(0, 8)}...
+                        </div>
+                        <div style="color: #7d8590; font-size: 11px; margin: 2px 0;">
+                            摘要: ${session.summary}
+                        </div>
+                        <div style="color: #7d8590; font-size: 11px; margin: 2px 0;">
+                            消息数: ${session.messageCount} | 分支: ${session.gitBranch}
+                        </div>
+                        <div style="color: #7d8590; font-size: 11px; margin: 2px 0;">
+                            创建: ${new Date(session.created).toLocaleString()}
+                        </div>
+                        <div style="margin-top: 5px;">
+                            <button onclick="copySessionId('${session.sessionId}')" style="padding: 4px 8px; font-size: 11px;">
+                                复制 ID
+                            </button>
+                            <button onclick="checkSessionById('${session.sessionId}')" style="padding: 4px 8px; font-size: 11px;">
+                                检查
+                            </button>
+                        </div>
+                    `;
+
+                    sessionListEl.appendChild(line);
+                });
+
+                appendToOutput('system', `已加载 ${data.totalSessions} 个 Session`, 'system');
+            } catch (error) {
+                sessionListEl.innerHTML = `<div class="output-line error">加载失败: ${error.message}</div>`;
+                appendToOutput('error', `加载 Session 列表失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 检查 Session
+        async function checkSession() {
+            const sessionId = sessionIdInput.value.trim();
+            if (!sessionId) {
+                appendToOutput('error', '请输入 Session ID', 'error');
+                return;
+            }
+            await checkSessionById(sessionId);
+        }
+
+        async function checkSessionById(sessionId) {
+            try {
+                const response = await fetch(`http://localhost:3000/session/check/${sessionId}`);
+                const data = await response.json();
+
+                if (data.exists) {
+                    appendToOutput('system', `Session 存在: ${data.session.summary}`, 'system');
+                    appendToOutput('text', `  消息数: ${data.session.messageCount}, 创建: ${new Date(data.session.created).toLocaleString()}`, 'text');
+                    sessionIdInput.value = sessionId;
+                } else {
+                    appendToOutput('error', `Session ${sessionId} 不存在`, 'error');
+                }
+            } catch (error) {
+                appendToOutput('error', `检查失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 删除 Session
+        async function deleteSession() {
+            const sessionId = sessionIdInput.value.trim();
+            if (!sessionId) {
+                appendToOutput('error', '请输入 Session ID', 'error');
+                return;
+            }
+
+            if (!confirm(`确定要删除 Session ${sessionId} 吗？`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`http://localhost:3000/session/delete/${sessionId}`, {
+                    method: 'DELETE'
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    appendToOutput('system', `Session ${sessionId} 已删除`, 'system');
+                    // 刷新列表
+                    listSessions();
+                } else {
+                    appendToOutput('error', data.message, 'error');
+                }
+            } catch (error) {
+                appendToOutput('error', `删除失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 清空 Session 列表显示
+        function clearSessions() {
+            sessionListEl.innerHTML = '<div class="output-line system">点击"列出所有 Session"查看</div>';
+            sessionCountEl.textContent = '-';
+            sessionIdInput.value = '';
+        }
+
+        // 复制 Session ID
+        function copySessionId(sessionId) {
+            navigator.clipboard.writeText(sessionId).then(() => {
+                sessionIdInput.value = sessionId;
+                appendToOutput('system', `Session ID 已复制: ${sessionId}`, 'system');
+            });
+        }
+
+        // ==================== 并发状态管理 ====================
+
+        // 刷新并发状态
+        async function refreshConcurrencyStatus() {
+            try {
+                const response = await fetch('http://localhost:3000/status/concurrency');
+                const data = await response.json();
+
+                document.getElementById('activeCount').textContent = data.active;
+                document.getElementById('queuedCount').textContent = data.queued;
+                document.getElementById('availableCount').textContent = data.available;
+                document.getElementById('maxCount').textContent = data.max;
+
+                // 根据状态更新颜色
+                const activeEl = document.getElementById('activeCount');
+                if (data.active >= data.max) {
+                    activeEl.style.color = '#da3633'; // 红色
+                } else if (data.active >= data.max * 0.7) {
+                    activeEl.style.color = '#d29922'; // 黄色
+                } else {
+                    activeEl.style.color = '#58a6ff'; // 蓝色
+                }
+
+                appendToOutput('system', `并发状态: ${data.active}/${data.max} 活跃, ${data.queued} 等待中`, 'system');
+            } catch (error) {
+                appendToOutput('error', `获取并发状态失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 初始化时自动刷新并发状态
+        refreshConcurrencyStatus();
+        // 每 5 秒自动刷新一次
+        setInterval(refreshConcurrencyStatus, 5000);
+
+        // ==================== 权限测试功能 ====================
+
+        // 测试权限模式
+        async function testPermission(prompt, mode) {
+            const workspace = document.getElementById('workspaceInput').value.trim();
+            const externaldirs = document.getElementById('externaldirsInput').value.trim();
+            const vision = document.getElementById('visionCheck').checked ? 'enabled' : '';
+
+            const requestBody = {
+                prompt,
+                ...(workspace && { workspace }),
+                ...(externaldirs && { externaldirs }),
+                ...(mode && { allowedmode: mode }),
+                ...(vision && { vision }),
+            };
+
+            clearOutput();
+            setStatus('streaming', '连接中...');
+            sendBtn.disabled = true;
+            startTime = Date.now();
+
+            appendToOutput('system', `发送权限测试请求: mode=${mode}`, 'system');
+            appendRawOutput({ type: 'request', body: requestBody });
+
+            try {
+                const response = await fetch('http://localhost:3000/chat/stream', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestBody),
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                setStatus('streaming', '接收数据...');
+                connectionInfo.textContent = `已连接: ${new Date().toLocaleTimeString()}`;
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.slice(6));
+                                appendRawOutput(data);
+
+                                switch (data.type) {
+                                    case 'start':
+                                        appendToOutput('system', `会话开始: ${data.sessionId}`, 'system');
+                                        break;
+                                    case 'data':
+                                        eventCount++;
+                                        if (data.content) {
+                                            if (typeof data.content === 'string') {
+                                                charCount += data.content.length;
+                                                appendToOutput('text', data.content, 'text');
+                                            } else if (data.content.text) {
+                                                charCount += data.content.text.length;
+                                                appendToOutput('text', data.content.text, 'text');
+                                            }
+                                        }
+                                        updateStats();
+                                        break;
+                                    case 'end':
+                                        appendToOutput('system', `会话结束: ${data.sessionId}`, 'system');
+                                        break;
+                                    case 'error':
+                                        appendToOutput('error', data.error || '未知错误', 'error');
+                                        break;
+                                }
+                            } catch (e) {
+                                appendToOutput('error', `解析失败: ${line}`, 'error');
+                            }
+                        }
+                    }
+                }
+
+                setStatus('idle', '完成');
+                connectionInfo.textContent = `完成于: ${new Date().toLocaleTimeString()}`;
+                updateStats();
+
+            } catch (error) {
+                appendToOutput('error', `请求失败: ${error.message}`, 'error');
+                setStatus('error', '错误');
+            } finally {
+                sendBtn.disabled = false;
+            }
+        }
+
+        // 测试禁止幻觉
+        async function testWithVision(prompt) {
+            document.getElementById('visionCheck').checked = true;
+            await testPermission(prompt, 'pure');
+        }
+
+        // 初始化
+        appendToOutput('system', '调试工具已就绪，请输入提示词或使用快速测试按钮', 'system');
+    </script>
+</body>
+</html>

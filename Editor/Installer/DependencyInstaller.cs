@@ -114,11 +114,21 @@ namespace Kiff.CcFastApi.Editor.Installer
 
             try
             {
+                // 构建命令
+                string command, arguments;
+#if UNITY_EDITOR_WIN
+                command = "cmd.exe";
+                arguments = $"/c npm install --progress=false";
+#else
+                command = "npm";
+                arguments = "install --progress=false";
+#endif
+
                 // 执行 npm install
                 var startInfo = new ProcessStartInfo
                 {
-                    FileName = "npm",
-                    Arguments = "install --progress=false",
+                    FileName = command,
+                    Arguments = arguments,
                     WorkingDirectory = projectPath,
                     UseShellExecute = false,
                     RedirectStandardOutput = true,

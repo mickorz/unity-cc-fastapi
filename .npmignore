@@ -1,0 +1,27 @@
+# Unity Package - npm 忽略配置
+# 防止 npm 相关文件被导入 Unity
+
+# Node.js 依赖
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# 环境变量文件（包含敏感信息）
+.env
+.env.local
+.env.*.local
+
+# TypeScript 构建缓存
+*.tsbuildinfo
+
+# 日志文件
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 临时文件
+tmp/
+temp/
+*.tmp

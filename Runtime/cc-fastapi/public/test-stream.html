@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude API 流式输出测试</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #4ecdc4;
+        }
+        .test-section {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+        .test-section h2 {
+            font-size: 18px;
+            margin-bottom: 15px;
+            color: #4ecdc4;
+        }
+        .prompt-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+        }
+        button {
+            background: #4ecdc4;
+            color: #1a1a2e;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        button:hover {
+            background: #3db8b0;
+            transform: translateY(-1px);
+        }
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .custom-prompt {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #333;
+            border-radius: 6px;
+            background: #0f0f23;
+            color: #eee;
+            font-size: 14px;
+        }
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #4ecdc4;
+        }
+        .output {
+            background: #0f0f23;
+            border-radius: 8px;
+            padding: 15px;
+            min-height: 150px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .output .event {
+            padding: 4px 0;
+        }
+        .output .event.start {
+            color: #4ecdc4;
+        }
+        .output .event.data {
+            color: #a8e6cf;
+        }
+        .output .event.end {
+            color: #ffd93d;
+        }
+        .output .event.error {
+            color: #ff6b6b;
+        }
+        .status {
+            margin-top: 10px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        .status.idle {
+            background: #333;
+            color: #aaa;
+        }
+        .status.streaming {
+            background: rgba(78, 205, 196, 0.2);
+            color: #4ecdc4;
+        }
+        .status.error {
+            background: rgba(255, 107, 107, 0.2);
+            color: #ff6b6b;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Claude API 流式输出测试</h1>
+
+        <div class="test-section">
+            <h2>快速测试</h2>
+            <div class="prompt-buttons">
+                <button onclick="testCounting()">从1数到20</button>
+                <button onclick="testHello()">打个招呼</button>
+                <button onclick="testCode()">写个简单函数</button>
+                <button onclick="testJoke()">讲个笑话</button>
+            </div>
+
+            <div class="custom-prompt">
+                <input type="text" id="customPrompt" placeholder="输入自定义提示词...">
+                <button onclick="testCustom()">发送</button>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>输出</h2>
+            <div class="output" id="output"></div>
+            <div class="status idle" id="status">空闲</div>
+        </div>
+    </div>
+
+    <script>
+        const output = document.getElementById('output');
+        const status = document.getElementById('status');
+        const customPrompt = document.getElementById('customPrompt');
+
+        function appendEvent(type, content) {
+            const div = document.createElement('div');
+            div.className = `event ${type}`;
+            div.textContent = `[${type}] ${typeof content === 'object' ? JSON.stringify(content, null, 2) : content}`;
+            output.appendChild(div);
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function setStatus(type, message) {
+            status.className = `status ${type}`;
+            status.textContent = message;
+        }
+
+        function clearOutput() {
+            output.innerHTML = '';
+        }
+
+        async function sendRequest(prompt) {
+            clearOutput();
+            setStatus('streaming', '正在连接...');
+
+            try {
+                const response = await fetch('http://localhost:3000/chat/stream', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ prompt })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                setStatus('streaming', '接收流式数据...');
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.slice(6));
+
+                                switch (data.type) {
+                                    case 'start':
+                                        appendEvent('start', `会话ID: ${data.sessionId}`);
+                                        break;
+                                    case 'data':
+                                        if (data.content) {
+                                            if (typeof data.content === 'string') {
+                                                appendEvent('data', data.content);
+                                            } else if (data.content.text) {
+                                                appendEvent('data', data.content.text);
+                                            } else if (data.content.delta?.text) {
+                                                appendEvent('data', data.content.delta.text);
+                                            } else {
+                                                appendEvent('data', JSON.stringify(data.content));
+                                            }
+                                        }
+                                        break;
+                                    case 'end':
+                                        appendEvent('end', `会话结束: ${data.sessionId}`);
+                                        setStatus('idle', '完成');
+                                        break;
+                                    case 'error':
+                                        appendEvent('error', data.error || '未知错误');
+                                        setStatus('error', '发生错误');
+                                        break;
+                                }
+                            } catch (e) {
+                                console.error('解析失败:', line);
+                            }
+                        }
+                    }
+                }
+
+                setStatus('idle', '完成');
+            } catch (error) {
+                appendEvent('error', error.message);
+                setStatus('error', '连接失败');
+            }
+        }
+
+        function testCounting() {
+            sendRequest('请从1数到20，每个数字之间用空格分隔');
+        }
+
+        function testHello() {
+            sendRequest('你好，请用中文打个招呼');
+        }
+
+        function testCode() {
+            sendRequest('请用 TypeScript 写一个计算斐波那契数列的函数');
+        }
+
+        function testJoke() {
+            sendRequest('请讲一个简短的程序员笑话');
+        }
+
+        function testCustom() {
+            const prompt = customPrompt.value.trim();
+            if (prompt) {
+                sendRequest(prompt);
+                customPrompt.value = '';
+            }
+        }
+
+        // 回车发送
+        customPrompt.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                testCustom();
+            }
+        });
+    </script>
+</body>
+</html>

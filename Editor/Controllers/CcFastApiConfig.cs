@@ -28,6 +28,7 @@ namespace Kiff.CcFastApi.Editor.Controllers
         [SerializeField] private bool _autoStart = false;
         [SerializeField] private string _startMode = "production"; // "development" or "production"
         [SerializeField] private bool _enableHotReload = false;
+        [SerializeField] private bool _autoRestoreOnRecompile = true; // 编译后自动恢复服务器状态
 
         // ========== 日志配置 ==========
         [SerializeField] private bool _enableLogging = true;
@@ -96,6 +97,15 @@ namespace Kiff.CcFastApi.Editor.Controllers
         {
             get => _enableHotReload;
             set => _enableHotReload = value;
+        }
+
+        /// <summary>
+        /// 编译后自动恢复服务器状态
+        /// </summary>
+        public bool AutoRestoreOnRecompile
+        {
+            get => _autoRestoreOnRecompile;
+            set => _autoRestoreOnRecompile = value;
         }
 
         /// <summary>
@@ -168,6 +178,7 @@ namespace Kiff.CcFastApi.Editor.Controllers
         private const string PrefKey_AutoStart = "KiffCcFastApi_AutoStart";
         private const string PrefKey_StartMode = "KiffCcFastApi_StartMode";
         private const string PrefKey_EnableHotReload = "KiffCcFastApi_EnableHotReload";
+        private const string PrefKey_AutoRestoreOnRecompile = "KiffCcFastApi_AutoRestoreOnRecompile";
         private const string PrefKey_EnableLogging = "KiffCcFastApi_EnableLogging";
         private const string PrefKey_LogLevel = "KiffCcFastApi_LogLevel";
         private const string PrefKey_EnableCors = "KiffCcFastApi_EnableCors";
@@ -188,6 +199,7 @@ namespace Kiff.CcFastApi.Editor.Controllers
             config._autoStart = EditorPrefs.GetBool(PrefKey_AutoStart, config._autoStart);
             config._startMode = EditorPrefs.GetString(PrefKey_StartMode, config._startMode);
             config._enableHotReload = EditorPrefs.GetBool(PrefKey_EnableHotReload, config._enableHotReload);
+            config._autoRestoreOnRecompile = EditorPrefs.GetBool(PrefKey_AutoRestoreOnRecompile, config._autoRestoreOnRecompile);
             config._enableLogging = EditorPrefs.GetBool(PrefKey_EnableLogging, config._enableLogging);
             config._logLevel = EditorPrefs.GetInt(PrefKey_LogLevel, config._logLevel);
             config._enableCors = EditorPrefs.GetBool(PrefKey_EnableCors, config._enableCors);
@@ -209,6 +221,7 @@ namespace Kiff.CcFastApi.Editor.Controllers
             EditorPrefs.SetBool(PrefKey_AutoStart, _autoStart);
             EditorPrefs.SetString(PrefKey_StartMode, _startMode);
             EditorPrefs.SetBool(PrefKey_EnableHotReload, _enableHotReload);
+            EditorPrefs.SetBool(PrefKey_AutoRestoreOnRecompile, _autoRestoreOnRecompile);
             EditorPrefs.SetBool(PrefKey_EnableLogging, _enableLogging);
             EditorPrefs.SetInt(PrefKey_LogLevel, _logLevel);
             EditorPrefs.SetBool(PrefKey_EnableCors, _enableCors);
@@ -376,6 +389,7 @@ namespace Kiff.CcFastApi.Editor.Controllers
         public int ActiveConnections { get; set; }
         public DateTime StartTime { get; set; }
         public string ProcessId { get; set; }
+        public bool IsExternalServer { get; set; } = false;
 
         /// <summary>
         /// 获取运行时间

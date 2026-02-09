@@ -7,6 +7,8 @@ using System.Threading.Tasks;
 using UnityEngine;
 using UnityEditor;
 using Debug = UnityEngine.Debug;
+using UnityEditor; // 处理编辑器扩展
+using UnityEditor.Compilation; // 处理编译管线相关类（如 CompilerMessage）
 
 namespace Kiff.CcFastApi.Editor.Controllers
 {
@@ -41,11 +43,14 @@ namespace Kiff.CcFastApi.Editor.Controllers
     [InitializeOnLoad]
     public static class CcFastApiController
     {
+        
         private static Process _serverProcess;
         private static readonly SemaphoreSlim _startupSemaphore = new SemaphoreSlim(1, 1);
         private static CcFastApiConfig _config;
         private static DateTime _serverStartTime;
         private static bool _isInitialized = false;
+        private static bool _isConnectedToExternalServer = false;
+        private static DateTime _lastCompilationCheckTime = DateTime.MinValue;
 
         /// <summary>
         /// 静态构造函数 - Unity 初始化时自动调用
@@ -107,6 +112,7 @@ namespace Kiff.CcFastApi.Editor.Controllers
             }
         }
 
+        
         /// <summary>
         /// 启动服务器
         /// </summary>
@@ -123,6 +129,36 @@ namespace Kiff.CcFastApi.Editor.Controllers
                 }
 
                 Debug.Log("[CcFastApi] 正在启动服务器...");
+
+                // 0. 检查端口是否被占用（多 Unity 实例支持）
+                var portStatus = await Utils.PortDetector.GetPortStatusAsync(_config.Host, _config.Port);
+                if (portStatus == Utils.PortStatus.InUseByCcFastApi)
+                {
+                    Debug.Log("[CcFastApi] 检测到 cc-fastapi 服务器已在其他 Unity 实例中运行");
+                    Debug.Log($"[CcFastApi] 连接到现有服务器 - {_config.GetServerUrl()}");
+
+                    // 标记为连接到外部服务器
+                    _isConnectedToExternalServer = true;
+                    _serverStartTime = DateTime.Now;
+
+                    // 标记为运行状态
+                    SaveSession();
+
+                    return true;
+                }
+                else if (portStatus == Utils.PortStatus.InUseByOther)
+                {
+                    Debug.LogError($"[CcFastApi] 端口 {_config.Port} 被其他程序占用");
+
+                    var processInfo = Utils.PortDetector.GetPortProcessInfo(_config.Port);
+                    var processDesc = string.IsNullOrEmpty(processInfo) ? "未知进程" : processInfo;
+
+                    EditorUtility.DisplayDialog("端口被占用",
+                        $"端口 {_config.Port} 已被其他程序使用。\n\n占用信息: {processDesc}\n\n请关闭占用端口的程序或修改配置使用其他端口。",
+                        "确定");
+
+                    return false;
+                }
 
                 // 1. 检查 Node.js 环境
                 var hasNode = await Utils.NodeDetector.IsNodeInstalledAsync();
@@ -234,6 +270,9 @@ namespace Kiff.CcFastApi.Editor.Controllers
                 // 8. 保存会话
                 SaveSession();
 
+                // 标记为本地服务器
+                _isConnectedToExternalServer = false;
+
                 Debug.Log($"[CcFastApi] 服务器启动成功 - {_config.GetServerUrl()}");
                 Debug.Log($"[CcFastApi] API 文档: {_config.GetDocsUrl()}");
 
@@ -258,6 +297,16 @@ namespace Kiff.CcFastApi.Editor.Controllers
             await _startupSemaphore.WaitAsync();
             try
             {
+                // 如果连接到外部服务器，只需断开连接
+                if (_isConnectedToExternalServer)
+                {
+                    Debug.Log("[CcFastApi] 断开与外部服务器的连接");
+                    _isConnectedToExternalServer = false;
+                    _serverStartTime = DateTime.MinValue;
+                    ClearSession();
+                    return true;
+                }
+
                 if (_serverProcess == null || _serverProcess.HasExited)
                 {
                     Debug.Log("[CcFastApi] 服务器未运行");
@@ -324,17 +373,28 @@ namespace Kiff.CcFastApi.Editor.Controllers
         /// </summary>
         public static ServerStatus GetStatus()
         {
+            // 检查是否连接到外部服务器或本地服务器正在运行
+            var isRunning = _isConnectedToExternalServer || (_serverProcess != null && !_serverProcess.HasExited);
+
             var status = new ServerStatus
             {
-                IsRunning = _serverProcess != null && !_serverProcess.HasExited,
+                IsRunning = isRunning,
                 Host = _config.Host,
-                Port = _config.Port
+                Port = _config.Port,
+                IsExternalServer = _isConnectedToExternalServer
             };
 
             if (status.IsRunning)
             {
                 status.StartTime = _serverStartTime;
-                status.ProcessId = _serverProcess.Id.ToString();
+                if (_serverProcess != null)
+                {
+                    status.ProcessId = _serverProcess.Id.ToString();
+                }
+                else if (_isConnectedToExternalServer)
+                {
+                    status.ProcessId = "外部服务器";
+                }
                 status.ActiveConnections = 1; // TODO: 从 API 获取实际连接数
             }
 
@@ -386,6 +446,70 @@ namespace Kiff.CcFastApi.Editor.Controllers
         private static void RegisterEditorEvents()
         {
             EditorApplication.quitting += OnEditorQuitting;
+            CompilationPipeline.assemblyCompilationFinished += OnAssemblyCompilationFinished;
+        }
+
+        /// <summary>
+        /// 程序集编译完成事件处理 - 自动恢复服务器状态
+        /// </summary>
+        private static void OnAssemblyCompilationFinished(string assemblyPath, CompilerMessage[] messages)
+        {
+            // 如果未启用自动恢复，直接返回
+            if (!_config.AutoRestoreOnRecompile)
+            {
+                return;
+            }
+
+            // 防抖：如果在 2 秒内已经检查过，跳过
+            var now = DateTime.Now;
+            if ((now - _lastCompilationCheckTime).TotalSeconds < 2)
+            {
+                return;
+            }
+            _lastCompilationCheckTime = now;
+
+            // 延迟执行，确保所有程序集编译完成
+            EditorApplication.delayCall += async () =>
+            {
+                try
+                {
+                    // 等待一段时间，确保编译完全完成
+                    await Task.Delay(1000);
+
+                    // 检查服务器是否已经在运行（本地或外部）
+                    var status = GetStatus();
+                    if (status.IsRunning)
+                    {
+                        // 已经在运行，只需要刷新状态
+                        Debug.Log("[CcFastApi] 编译完成，服务器已在运行");
+                        return;
+                    }
+
+                    // 检查端口是否被 cc-fastapi 占用
+                    var portStatus = await Utils.PortDetector.GetPortStatusAsync(_config.Host, _config.Port);
+                    if (portStatus == Utils.PortStatus.InUseByCcFastApi)
+                    {
+                        // 外部 cc-fastapi 服务器在运行，连接到它
+                        Debug.Log("[CcFastApi] 编译完成，检测到外部 cc-fastapi 服务器");
+                        _isConnectedToExternalServer = true;
+                        _serverStartTime = DateTime.Now;
+                        SaveSession();
+                    }
+                    else if (portStatus == Utils.PortStatus.Available)
+                    {
+                        // 端口可用，检查是否需要自动启动
+                        if (EditorPrefs.GetBool("KiffCcFastApi_Running", false))
+                        {
+                            Debug.Log("[CcFastApi] 编译完成，自动恢复服务器");
+                            await StartServerAsync();
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[CcFastApi] 编译后恢复服务器失败: {ex.Message}");
+                }
+            };
         }
 
         /// <summary>
@@ -412,6 +536,7 @@ namespace Kiff.CcFastApi.Editor.Controllers
             ClearSession();
         }
 
+        
         /// <summary>
         /// 清理孤儿进程
         /// </summary>
@@ -421,8 +546,9 @@ namespace Kiff.CcFastApi.Editor.Controllers
             var wasRunning = EditorPrefs.GetBool("KiffCcFastApi_Running", false);
             if (wasRunning)
             {
-                Debug.Log("[CcFastApi] 检测到上次会议运行状态");
-                ClearSession();
+                Debug.Log("[CcFastApi] 检测到上次会议重启");
+                // ClearSession();
+                _ = StartServerAsync();
             }
         }
 
@@ -442,7 +568,7 @@ namespace Kiff.CcFastApi.Editor.Controllers
                 Debug.LogWarning($"[CcFastApi] 保存会话失败: {ex.Message}");
             }
         }
-
+        
         /// <summary>
         /// 清除会话信息
         /// </summary>

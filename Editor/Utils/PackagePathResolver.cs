@@ -67,7 +67,21 @@ namespace Kiff.CcFastApi.Editor.Utils
                 return null;
             }
 
-            return Path.Combine(packageRoot, "Runtime", "cc-fastapi");
+            var nodeProjectPath = Path.Combine(packageRoot, "Runtime", "cc-fastapi");
+
+            // 添加调试日志
+            Debug.Log($"[CcFastApi] PackageRoot: {packageRoot}");
+            Debug.Log($"[CcFastApi] NodeProjectPath: {nodeProjectPath}");
+            Debug.Log($"[CcFastApi] Directory.Exists: {Directory.Exists(nodeProjectPath)}");
+
+            if (Directory.Exists(nodeProjectPath))
+            {
+                var packageJson = Path.Combine(nodeProjectPath, "package.json");
+                Debug.Log($"[CcFastApi] package.json path: {packageJson}");
+                Debug.Log($"[CcFastApi] package.json exists: {File.Exists(packageJson)}");
+            }
+
+            return nodeProjectPath;
         }
 
         /// <summary>

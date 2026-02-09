@@ -43,6 +43,7 @@ namespace Kiff.CcFastApi.Editor.UI
         private TextField _hostField;
         private IntegerField _portField;
         private Toggle _autoStartToggle;
+        private Toggle _autoRestoreOnRecompileToggle;
 
         // 状态
         private DateTime _lastUpdateTime = DateTime.MinValue;
@@ -462,6 +463,27 @@ namespace Kiff.CcFastApi.Editor.UI
             autoStartRow.Add(_autoStartToggle);
             content.Add(autoStartRow);
 
+            // 编译后自动恢复配置
+            var autoRestoreRow = new VisualElement
+            {
+                style = { flexDirection = FlexDirection.Row, marginBottom = 10, alignItems = Align.Center }
+            };
+
+            var autoRestoreLabel = new Label("编译后自动恢复:")
+            {
+                style = { width = 80, fontSize = 12 }
+            };
+
+            _autoRestoreOnRecompileToggle = new Toggle
+            {
+                value = Controllers.CcFastApiController.GetConfig().AutoRestoreOnRecompile,
+                tooltip = "Unity 重新编译后，自动恢复服务器状态\n\n勾选后，当 Unity 编译完成时：\n- 如果服务器之前在运行，会自动启动\n- 如果检测到其他 Unity 实例的服务器，会自动连接"
+            };
+
+            autoRestoreRow.Add(autoRestoreLabel);
+            autoRestoreRow.Add(_autoRestoreOnRecompileToggle);
+            content.Add(autoRestoreRow);
+
             // 保存按钮
             var saveButton = new Button(OnSaveConfig)
             {
@@ -622,6 +644,7 @@ namespace Kiff.CcFastApi.Editor.UI
             config.Host = _hostField.value;
             config.Port = (int)_portField.value;
             config.AutoStart = _autoStartToggle.value;
+            config.AutoRestoreOnRecompile = _autoRestoreOnRecompileToggle.value;
 
             Controllers.CcFastApiController.UpdateConfig(config);
 
