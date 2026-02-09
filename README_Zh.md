@@ -6,6 +6,20 @@
 
 在 Unity 编辑器中一键启动 Claude Code API 服务，支持流式聊天、会话管理等功能。
 
+## 界面预览
+
+### Unity 管理器窗口
+
+![CC-FastAPI Window](CC-FastAPI-Window.png)
+
+### Claude API 聊天界面
+
+![Claude API](Claude_API_.png)
+
+### Swagger API 文档
+
+![Swagger UI](Swagger_UI.png)
+
 ---
 
 ## 功能特性

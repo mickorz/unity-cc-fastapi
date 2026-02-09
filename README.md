@@ -2,6 +2,20 @@
 
 Claude Code CLI 中转 API 服务器 - Unity 集成包
 
+## 界面预览
+
+### Unity 管理器窗口
+
+![CC-FastAPI Window](CC-FastAPI-Window.png)
+
+### Claude API 聊天界面
+
+![Claude API](Claude_API_.png)
+
+### Swagger API 文档
+
+![Swagger UI](Swagger_UI.png)
+
 ## 快速开始
 
 ### 安装
